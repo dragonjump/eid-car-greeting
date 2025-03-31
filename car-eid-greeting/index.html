@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eid Racer 3D - GLB Cars & Random Traffic!</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #2a2a5a;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 1px 1px 3px black, 0 0 5px #ffffaa;
+            z-index: 10;
+            transition: color 0.3s ease-out;
+        }
+
+        #boost-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: yellow;
+            font-family: Arial, sans-serif;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 1px 1px 3px black;
+            display: none;
+            z-index: 10;
+        }
+
+        #loading {
+            /* Basic loading indicator */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            text-shadow: 1px 1px 2px black;
+            z-index: 11;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading">Loading Assets...</div>
+    <div id="info">Eid Mubarak! Use Arrow Keys or WASD. Collect Power-ups for Speed Boosts!</div>
+    <div id="boost-indicator">BOOST!</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- *IMPORTANT*: Use type="importmap" for easier imports -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <!-- *IMPORTANT*: Use type="module" for the main script -->
+    <script type="module">
+        // --- Imports ---
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // --- Basic Setup ---
+        let scene, camera, renderer;
+        let playerCar, track, eidSign;
+        const keys = { 
+            ArrowUp: false, 
+            ArrowDown: false, 
+            ArrowLeft: false, 
+            ArrowRight: false, 
+            Shift: false,
+            w: false,
+            s: false,
+            a: false,
+            d: false
+        };
+        let gameReady = false;
+
+        // --- Audio Context Setup ---
+        let audioContext;
+        let engineOscillator = null;
+        let engineGain = null;
+
+        // --- Fire Effect Variables ---
+        let fireParticles = [];
+        const maxParticles = 200; // Increased from 50 to accommodate more particles
+        const particleSpawnRate = 2; // Spawn particles more frequently (lower number = more frequent)
+        let particleTimer = 0;
+
+        // --- Firework Variables ---
+        let fireworks = [];
+        const maxFireworks = 10;
+        const fireworkColors = [0xff0000, 0x00ff00, 0xffff00, 0xff00ff, 0x00ffff];
+        let lastFireworkTime = 0;
+        const fireworkInterval = 2000; // Launch new firework every 2 seconds
+
+        // --- Background Music Setup ---
+        let backgroundMusic = null;
+
+        // --- Camera ---
+        const cameraFollowDistance = 15; // Increased from 10 to maintain good view from higher up
+        const cameraHeight = 4;
+        const minCameraHeight = 0.5; // Decreased from 2 to allow much lower viewing
+        const maxCameraHeight = 25; // Increased from 8 to allow much higher viewing
+        let currentCameraHeight = cameraHeight;
+        let mouseY = 0;
+        let isMouseControlEnabled = false;
+
+        // Add this with other global variables
+        let showGxbankText = true; // Parameter to toggle Gxbank text visibility
+
+        // Initialize audio context with user interaction
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // Sound effect functions
+        function playPowerUpSound() {
+            if (!audioContext) return;
+            
+            // Create oscillator for power-up sound
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            
+            // Configure sound
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(440, audioContext.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.1);
+            
+            // Reduced volume by 20%
+            gain.gain.setValueAtTime(0.24, audioContext.currentTime); // Reduced from 0.3
+            gain.gain.exponentialRampToValueAtTime(0.008, audioContext.currentTime + 0.3); // Reduced from 0.01
+            
+            // Connect and start
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            osc.start();
+            osc.stop(audioContext.currentTime + 0.3);
+        }
+
+        function updateEngineSound() {
+            if (!audioContext || !engineOscillator) return;
+            
+            // Adjust frequency based on speed
+            const baseFreq = 200;
+            const maxFreq = 400;
+            const speedFactor = Math.abs(speed) / currentMaxSpeed;
+            const currentFreq = baseFreq + (maxFreq - baseFreq) * speedFactor;
+            
+            engineOscillator.frequency.setValueAtTime(currentFreq, audioContext.currentTime);
+            // Reduced volume by 20%
+            engineGain.gain.setValueAtTime(speedFactor * 0.08, audioContext.currentTime); // Reduced from 0.1
+        }
+
+        function startEngineSound() {
+            if (!audioContext || engineOscillator) return;
+            
+            engineOscillator = audioContext.createOscillator();
+            engineGain = audioContext.createGain();
+            
+            engineOscillator.type = 'sawtooth';
+            engineOscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+            
+            // Reduced volume by 20%
+            engineGain.gain.setValueAtTime(0.08, audioContext.currentTime); // Reduced from 0.1
+            
+            engineOscillator.connect(engineGain);
+            engineGain.connect(audioContext.destination);
+            engineOscillator.start();
+        }
+
+        function stopEngineSound() {
+            if (!engineOscillator) return;
+            
+            engineOscillator.stop();
+            engineOscillator.disconnect();
+            engineGain.disconnect();
+            engineOscillator = null;
+            engineGain = null;
+        }
+
+        // --- Car Physics Parameters ---
+        let speed = 0;
+        const baseMaxSpeed = 0.3;
+        const shiftBoostMultiplier = 1.5; // Speed multiplier when shift is pressed
+        const baseAcceleration = 0.005;
+        const reverseSpeedMultiplier = 1.8; // New multiplier for reverse speed
+        const braking = 0.01;
+        const friction = 0.003;
+        const turnSpeed = 0.03;
+        let currentMaxSpeed = baseMaxSpeed;
+        let currentAcceleration = baseAcceleration;
+        const carScale = 0.7; // Scale factor for loaded car models
+
+        // --- Power-up Variables ---
+        const powerUps = [];
+        const powerUpTypes = { MOON: 'moon', KETUPAT: 'ketupat', CRESCENT: 'crescent', LANTERN: 'lantern', GREEN_LANTERN: 'green_lantern' };
+        const boostDurationShort = 180; const boostDurationLong = 300;
+        const boostMultiplier = 1.8; let boostTimer = 0;
+        const powerUpRespawnTime = 300; const powerUpBobSpeed = 0.002; const powerUpBobAmount = 0.15;
+        const collisionThresholdCar = 1.5 * carScale; // Collision based on scaled car size
+        const collisionThresholdPowerUp = 1.2;
+
+        // --- Track Constants ---
+        const trackRadiusInner = 30; const trackRadiusOuter = 40;
+        const trackMidRadius = (trackRadiusInner + trackRadiusOuter) / 2;
+        const worldBoundary = 120; // Slightly smaller boundary for background cars
+
+        // --- Background Cars ---
+        const backgroundCars = [];
+        const numBackgroundCars = 4;
+        const backgroundCarBaseSpeed = 0.08;
+        const backgroundCarTurnRate = 0.02; // How quickly they change direction
+        const backgroundCarChangeDirTimeMin = 200; // Min frames before changing direction
+        const backgroundCarChangeDirTimeMax = 500; // Max frames
+
+        // --- DOM Elements & Greeting ---
+        let boostIndicator, infoElement, loadingElement;
+        const defaultInfoText = "Eid Mubarak! Use Arrow Keys or WASD. Collect Power-ups for Speed Boosts!";
+        const eidGreetings = [
+            "Eid Mubarak! May Allah's blessings be with you!",
+            "Taqabbal Allahu Minna Wa Minkum - May Allah accept from us and from you!",
+            "Kullu Aam Wa Antum Bi Khair - May you be well throughout the year!",
+            "May this Eid bring joy, peace, and prosperity to all!",
+            "Selamat Hari Raya! Maaf Zahir dan Batin - Forgive my physical and spiritual wrongdoings!",
+            "May Allah accept our prayers and grant us His mercy!",
+            "Eid Sa'eed - Have a blessed and happy Eid!",
+            "May the divine blessings of Allah bring you hope and joy!",
+            "Minal Aidin Wal Faizin - May we be among those who receive blessings!",
+            "May this Eid strengthen our bonds and unite our hearts!",
+            "Blessed Eid! May Allah's peace and guidance be with you always!"
+        ];
+        let greetingTimeoutId = null;
+
+        // --- Sign Constants ---
+        const signBaseY = 8; const signBobAmount = 1.0; const signBobSpeed = 0.5; const signRotateSpeed = 0.005;
+
+        // --- Asset Loading ---
+        const loader = new GLTFLoader();
+        const loadedModels = {}; // Store loaded GLTF scenes/models here
+
+        // --- GLB URLs (Replace with your actual URLs!) --- 
+ 
+        const carUrls = {
+            player: 'car2.glb', // Example player car
+            bg1: 'car1.glb', // Example bg car 1
+
+            bg2: 'lambo.glb',
+            bg3: 'police.glb',
+            bg4: 'cybertruck.glb',
+        };
+        const bgCarKeys = ['bg1', 'bg2', 'bg3', 'bg4']; // Keys for background cars
+
+
+        // --- Initialization ---
+        async function init() {
+            boostIndicator = document.getElementById('boost-indicator');
+            infoElement = document.getElementById('info');
+            loadingElement = document.getElementById('loading');
+            infoElement.textContent = defaultInfoText;
+
+            // Add mouse event listeners
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mousedown', () => isMouseControlEnabled = true);
+            document.addEventListener('mouseup', () => isMouseControlEnabled = false);
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a1a3a); // Darker sky color
+            scene.fog = new THREE.Fog(0x0a1a3a, 80, 250);
+
+            // Add moon and stars
+            createMoonAndStars();
+
+            // Create fire particle system
+            createFireParticles();
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, cameraHeight, cameraFollowDistance);
+            camera.lookAt(0, 0, 0);
+
+            // Renderer
+            const canvas = document.getElementById('gameCanvas');
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: canvas, 
+                antialias: true,
+                precision: 'highp',
+                powerPreference: 'high-performance',
+                stencil: false
+            });
+            
+            // Set pixel ratio for HD displays (but cap it to prevent performance issues)
+            const pixelRatio = Math.min(window.devicePixelRatio, 2);
+            renderer.setPixelRatio(pixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // Enhanced shadow settings
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.shadowMap.autoUpdate = true;
+            
+            // Improved color and tone settings
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            
+            // Enable physically correct lighting
+            renderer.physicallyCorrectLights = true;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x606070, 0.8);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            directionalLight.position.set(-40, 60, -30);
+            directionalLight.castShadow = true;
+
+            // Increase shadow map resolution
+            directionalLight.shadow.mapSize.width = 4096;
+            directionalLight.shadow.mapSize.height = 4096;
+            directionalLight.shadow.camera.near = 1;
+            directionalLight.shadow.camera.far = 200;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            directionalLight.shadow.bias = -0.0001;
+            directionalLight.shadow.normalBias = 0.02;
+            directionalLight.shadow.radius = 1.5;
+
+            scene.add(directionalLight);
+            scene.add(directionalLight.target);
+
+            // Add a secondary fill light for better details
+            const fillLight = new THREE.DirectionalLight(0x8088ff, 0.4);
+            fillLight.position.set(40, 20, 40);
+            scene.add(fillLight);
+
+            // --- Load Models ---
+            try {
+                await loadAllModels();
+                loadingElement.style.display = 'none'; // Hide loading message
+                console.log("Models loaded successfully!");
+            } catch (error) {
+                console.error("Error loading models:", error);
+                loadingElement.textContent = "Error loading models. Please check URLs/console.";
+                return; // Stop initialization if models fail
+            }
+
+            // --- Create Game Objects (Now that models are loaded) ---
+            createTrack();
+            createGround();
+            createPlayerCar(); // Use loaded player model
+            createEidSign();
+            createPowerUps(15);
+            createBackgroundCars(numBackgroundCars); // Use loaded background models
+
+            // Initial camera setup
+            updateCamera(); // Set camera initial position relative to the loaded car
+
+            // Set game ready flag and start animation loop
+            gameReady = true;
+            console.log("Game ready!");
+            animate();
+
+            // Event Listeners
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('resize', onWindowResize);
+
+            // Add after scene setup
+            initBackgroundMusic();
+        }
+
+        // --- Asset Loading Function ---
+        function loadGLB(url) {
+            return new Promise((resolve, reject) => {
+                loader.load(url,
+                    (gltf) => {
+                        // Enable shadows on all meshes within the loaded model
+                        gltf.scene.traverse(function (node) {
+                            if (node.isMesh) {
+                                node.castShadow = true;
+                                node.receiveShadow = true; // Optional: allow self-shadowing or shadows from other objects
+                                // Improve material appearance if needed
+                                if (node.material && node.material.map) {
+                                    node.material.map.encoding = THREE.sRGBEncoding;
+                                }
+                            }
+                        });
+                        resolve(gltf.scene); // Resolve with the scene object
+                    },
+                    undefined, // Progress callback (optional)
+                    (error) => {
+                        console.error(`Failed to load GLB: ${url}`, error);
+                        reject(error);
+                    }
+                );
+            });
+        }
+
+        async function loadAllModels() {
+            const promises = [];
+            const modelKeys = Object.keys(carUrls);
+
+            modelKeys.forEach(key => {
+                console.log(`Loading model: ${key} from ${carUrls[key]}`);
+                promises.push(
+                    loadGLB(carUrls[key]).then(model => {
+                        loadedModels[key] = model; // Store the loaded scene
+                    })
+                );
+            });
+
+            await Promise.all(promises); // Wait for all loading promises to complete
+        }
+
+        // --- Object Creation Functions ---
+        function createTrack() { /* ... (same geometry/material) ... */
+            const trackGeometry = new THREE.RingGeometry(trackRadiusInner, trackRadiusOuter, 64);
+            const trackMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, side: THREE.DoubleSide });
+            track = new THREE.Mesh(trackGeometry, trackMaterial);
+            track.rotation.x = -Math.PI / 2; track.position.y = -0.1; track.receiveShadow = true;
+            scene.add(track);
+        }
+        function createGround() {
+            const groundGeometry = new THREE.PlaneGeometry(worldBoundary * 2.2, worldBoundary * 2.2);
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x0a3d1e, roughness: 0.9 }); // Darker grass
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2; ground.position.y = -0.15; ground.receiveShadow = true;
+            scene.add(ground);
+        }
+
+        function createPlayerCar() {
+            if (!loadedModels.player) {
+                console.error("Player model not loaded!");
+                // Fallback to box if model failed
+                const fallbackGeo = new THREE.BoxGeometry(1.5, 0.8, 3);
+                const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+                playerCar = new THREE.Mesh(fallbackGeo, fallbackMat);
+                playerCar.position.y = 0.2;
+            } else {
+                playerCar = loadedModels.player.clone(); // Clone the loaded model scene
+                playerCar.scale.set(carScale*1.85, carScale*1.85, carScale*1.85); // Scale the model
+                playerCar.position.y = 0.1; // Lower the car's position to be closer to ground
+                playerCar.rotation.y = -Math.PI; // Rotate the car by 180 degrees around the Y axis
+            }
+
+            playerCar.position.z = trackMidRadius; // Initial position on track
+            // Ensure player car casts shadows (traverse might be needed again after clone if properties are lost)
+            playerCar.traverse(node => { if (node.isMesh) node.castShadow = true; });
+            scene.add(playerCar);
+            console.log("Player car created at:", playerCar.position);
+        }
+
+        function createEidSign() {
+            const loader = new THREE.FontLoader();
+            const textGroup = new THREE.Group();
+            
+            // Load font and create 3D text
+            loader.load('https://threejs.org/examples/fonts/helvetiker_bold.typeface.json', function (font) {
+                // Main text geometry (Happy Eid!)
+                const textGeometry = new THREE.TextGeometry('Happy Eid!', {
+                    font: font,
+                    size: 2,
+                    height: 0.4,
+                    curveSegments: 12,
+                    bevelEnabled: true,
+                    bevelThickness: 0.1,
+                    bevelSize: 0.05,
+                    bevelSegments: 5
+                });
+                
+                // Center the Happy Eid text
+                textGeometry.computeBoundingBox();
+                const textWidth = textGeometry.boundingBox.max.x - textGeometry.boundingBox.min.x;
+                textGeometry.translate(-textWidth / 2, 0, 0);
+                
+                // Main text material (bright yellow)
+                const textMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xffff00,
+                    metalness: 0.8,
+                    roughness: 0.2,
+                    emissive: 0xffff00,
+                    emissiveIntensity: 0.5
+                });
+                
+                // Create main text mesh
+                const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+                textGroup.add(textMesh);
+
+                // Create Gxbank text
+                if (showGxbankText) {
+                    const gxbankGeometry = new THREE.TextGeometry('Gxbank', {
+                        font: font,
+                        size: 1.5, // Slightly smaller than Happy Eid
+                        height: 0.3,
+                        curveSegments: 12,
+                        bevelEnabled: true,
+                        bevelThickness: 0.08,
+                        bevelSize: 0.04,
+                        bevelSegments: 5
+                    });
+                    
+                    // Center the Gxbank text
+                    gxbankGeometry.computeBoundingBox();
+                    const gxbankWidth = gxbankGeometry.boundingBox.max.x - gxbankGeometry.boundingBox.min.x;
+                    gxbankGeometry.translate(-gxbankWidth / 2, -2.5, 0); // Position below Happy Eid
+                    
+                    // Purple material for Gxbank
+                    const gxbankMaterial = new THREE.MeshStandardMaterial({
+                        color: 0x800080, // Purple color
+                        metalness: 0.8,
+                        roughness: 0.2,
+                        emissive: 0x400040, // Darker purple for emissive
+                        emissiveIntensity: 0.6
+                    });
+                    
+                    const gxbankMesh = new THREE.Mesh(gxbankGeometry, gxbankMaterial);
+                    textGroup.add(gxbankMesh);
+
+                    // Add purple glow to Gxbank text
+                    const gxbankLight = new THREE.PointLight(0x800080, 1, 8);
+                    gxbankLight.position.set(0, -2.5, 2);
+                    textGroup.add(gxbankLight);
+                }
+                
+                // Add outline glow effect for Happy Eid
+                const outlineGeometry = textGeometry.clone();
+                const outlineMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffff00,
+                    transparent: true,
+                    opacity: 0.4,
+                    side: THREE.BackSide
+                });
+                
+                // Create multiple outline layers for stronger glow
+                for(let i = 1; i <= 3; i++) {
+                    const outline = new THREE.Mesh(outlineGeometry, outlineMaterial.clone());
+                    outline.scale.multiplyScalar(1 + i * 0.02);
+                    textGroup.add(outline);
+                }
+                
+                // Add point lights around the text for extra glow
+                const lightPositions = [
+                    new THREE.Vector3(-2, 0, 1),
+                    new THREE.Vector3(2, 0, 1),
+                    new THREE.Vector3(0, 2, 1)
+                ];
+                
+                lightPositions.forEach(pos => {
+                    const light = new THREE.PointLight(0xffff00, 1, 5);
+                    light.position.copy(pos);
+                    textGroup.add(light);
+                });
+            });
+            
+            textGroup.position.set(0, signBaseY, 0);
+            scene.add(textGroup);
+            eidSign = textGroup;
+        }
+        function createPowerUp(type, position) { /* ... (same as before) ... */
+            const powerUpGroup = new THREE.Group();
+            powerUpGroup.position.copy(position);
+            powerUpGroup.position.y = 1.0;
+            let visualMesh; let light;
+            // ... (logic for creating different powerup geometries/materials remains the same)
+            if (type === powerUpTypes.MOON) { const geometry = new THREE.SphereGeometry(0.6, 16, 8); const material = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xccaa00, emissiveIntensity: 1.5, metalness: 0.1, roughness: 0.5 }); visualMesh = new THREE.Mesh(geometry, material); }
+            else if (type === powerUpTypes.LANTERN) { const geometry = new THREE.OctahedronGeometry(0.7, 0); const material = new THREE.MeshStandardMaterial({ color: 0xff8c00, emissive: 0xaa4400, emissiveIntensity: 1, metalness: 0.2, roughness: 0.4, transparent: true, opacity: 0.9 }); visualMesh = new THREE.Mesh(geometry, material); light = new THREE.PointLight(0xffaa00, 1, 5); light.position.y = 0.1; visualMesh.add(light); }
+            else if (type === powerUpTypes.CRESCENT) { const geometry = new THREE.IcosahedronGeometry(0.7, 0); const material = new THREE.MeshStandardMaterial({ color: 0xf0f0ff, emissive: 0xcccccc, emissiveIntensity: 1.2, metalness: 0.3, roughness: 0.2 }); visualMesh = new THREE.Mesh(geometry, material); }
+            else if (type === powerUpTypes.KETUPAT) { const geometry = new THREE.BoxGeometry(1, 1, 1); const material = new THREE.MeshStandardMaterial({ color: 0x50C878, metalness: 0.1, roughness: 0.7 }); visualMesh = new THREE.Mesh(geometry, material); visualMesh.rotation.set(Math.PI / 4, Math.PI / 4, 0); visualMesh.scale.set(0.8, 0.8, 0.8); }
+            else if (type === powerUpTypes.GREEN_LANTERN) { const geometry = new THREE.OctahedronGeometry(0.7, 0); const material = new THREE.MeshStandardMaterial({ color: 0x00ff7f, emissive: 0x00aa44, emissiveIntensity: 1.2, metalness: 0.2, roughness: 0.4, transparent: true, opacity: 0.9 }); visualMesh = new THREE.Mesh(geometry, material); light = new THREE.PointLight(0x00ff7f, 1, 5); light.position.y = 0.1; visualMesh.add(light); }
+
+            if (visualMesh) {
+                visualMesh.castShadow = true;
+                if (visualMesh.children) { visualMesh.traverse(child => { if (child.isLight) child.castShadow = false; else if (child.isMesh) child.castShadow = true; }); }
+                powerUpGroup.add(visualMesh);
+                powerUpGroup.userData = { type: type, active: true, respawnTimer: 0, bobOffset: Math.random() * Math.PI * 2, visualMesh: visualMesh };
+                powerUps.push(powerUpGroup); scene.add(powerUpGroup);
+            }
+        }
+        function createPowerUps(count) { /* ... (same as before) ... */
+            const angleStep = (Math.PI * 2) / count;
+            const types = [powerUpTypes.MOON, powerUpTypes.LANTERN, powerUpTypes.CRESCENT, powerUpTypes.KETUPAT, powerUpTypes.GREEN_LANTERN];
+            for (let i = 0; i < count; i++) {
+                const angle = angleStep * i;
+                const radius = trackMidRadius + (Math.random() - 0.5) * (trackRadiusOuter - trackRadiusInner) * 0.7;
+                const x = Math.sin(angle) * radius; const z = Math.cos(angle) * radius;
+                const type = types[i % types.length];
+                createPowerUp(type, new THREE.Vector3(x, 0, z));
+            }
+        }
+
+        function createBackgroundCars(count) {
+            for (let i = 0; i < count; i++) {
+                const modelKey = bgCarKeys[i % bgCarKeys.length]; // Cycle through available bg car models
+                if (!loadedModels[modelKey]) {
+                    console.warn(`Background model ${modelKey} not loaded, skipping car ${i}`);
+                    continue; // Skip if model failed loading
+                }
+
+                const bgCar = loadedModels[modelKey].clone(); // Clone model
+                
+                // Special scaling for police car (bg3)
+                if (modelKey === 'bg3') {
+                    bgCar.scale.set(carScale * 3, carScale * 3, carScale * 3); // Triple the scale for police car
+                } 
+                else {
+                    bgCar.scale.set(carScale *1, carScale *1, carScale *1); // Normal scale for other cars
+                }
+                if (modelKey === 'bg4') {
+                    bgCar.scale.set(15.6, 15.6, 15.6); // Triple the scale for police car
+                }
+                if (modelKey === 'bg2') {
+                    bgCar.scale.set(.018, .018, .018); // Triple the scale for police car
+                }
+                if (modelKey === 'bg1') {
+                    bgCar.scale.set(.4, .4, .4); // Triple the scale for police car
+                }
+                
+                // Random position outside the track
+                const angle = Math.random() * Math.PI * 2;
+                const radius = trackRadiusOuter + 15 + Math.random() * (worldBoundary - trackRadiusOuter - 30);
+                
+                // Special height for police car (bg3)
+                const height = modelKey === 'bg3' ? 0.863 : 0.741; // 30% higher for police car
+                
+                bgCar.position.set(
+                    Math.cos(angle) * radius, 
+                    height,
+                    Math.sin(angle) * radius
+                );
+
+                // Random initial direction vector & speed
+                const direction = new THREE.Vector3((Math.random() - 0.5), 0, (Math.random() - 0.5)).normalize();
+                const speed = backgroundCarBaseSpeed * (0.8 + Math.random() * 0.4); // Slight speed variation
+
+                bgCar.userData = {
+                    velocity: direction.multiplyScalar(speed),
+                    changeDirectionTimer: Math.random() * (backgroundCarChangeDirTimeMax - backgroundCarChangeDirTimeMin) + backgroundCarChangeDirTimeMin,
+                    targetDirection: direction.clone(), // Store target direction
+                    modelKey: modelKey // Store the model key for later use
+                };
+
+                // Disable shadows for performance
+                bgCar.traverse(node => { if (node.isMesh) node.castShadow = false; });
+
+                backgroundCars.push(bgCar);
+                scene.add(bgCar);
+            }
+            console.log(`Created ${backgroundCars.length} background cars.`);
+        }
+
+        // --- Event Handlers ---
+        function handleKeyDown(event) {
+            if (keys.hasOwnProperty(event.key)) {
+                initAudio(); // Initialize audio on first key press
+                if (!engineOscillator) {
+                    startEngineSound();
+                }
+                // Start background music on first interaction
+                if (backgroundMusic && backgroundMusic.paused) {
+                    backgroundMusic.play().catch(e => console.log("Audio play failed:", e));
+                }
+                keys[event.key] = true;
+            }
+        }
+
+        function handleKeyUp(event) {
+            if (keys.hasOwnProperty(event.key)) {
+                keys[event.key] = false;
+                
+                // Stop engine sound if no keys are pressed
+                if (!Object.values(keys).some(value => value)) {
+                    stopEngineSound();
+                }
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            
+            // Maintain pixel ratio on resize
+            const pixelRatio = Math.min(window.devicePixelRatio, 2);
+            renderer.setPixelRatio(pixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Update Functions ---
+        function updatePlayerCar() {
+            if (!playerCar) return;
+
+            // Apply shift boost
+            const shiftBoost = keys.Shift ? shiftBoostMultiplier : 1;
+
+            // Boost Effect (from power-ups)
+            if (boostTimer > 0) {
+                boostTimer--;
+                currentMaxSpeed = baseMaxSpeed * boostMultiplier * shiftBoost;
+                currentAcceleration = baseAcceleration * boostMultiplier;
+                boostIndicator.style.display = 'block';
+            } else {
+                currentMaxSpeed = baseMaxSpeed * shiftBoost;
+                currentAcceleration = baseAcceleration;
+                boostIndicator.style.display = 'none';
+            }
+
+            // Acceleration / Braking with enhanced reverse speed
+            if (keys.ArrowUp || keys.w) {
+                speed += currentAcceleration;
+            } else if (keys.ArrowDown || keys.s) {
+                speed -= braking;
+                currentMaxSpeed *= reverseSpeedMultiplier; // Apply reverse speed multiplier
+            } else {
+                if (speed > 0) speed -= friction;
+                if (speed < 0) speed += friction;
+                if (Math.abs(speed) < friction) speed = 0;
+            }
+
+            speed = Math.max(-currentMaxSpeed, Math.min(currentMaxSpeed, speed));
+
+            // Steering
+            let direction = 0;
+            if (keys.ArrowLeft || keys.a) {
+                direction = 1;
+            } else if (keys.ArrowRight || keys.d) {
+                direction = -1;
+            }
+
+            if (speed !== 0) {
+                playerCar.rotation.y += direction * turnSpeed * Math.sign(speed);
+            }
+
+            // Movement
+            const forward = new THREE.Vector3();
+            playerCar.getWorldDirection(forward);
+            playerCar.position.addScaledVector(forward, speed);
+
+            // Prevent falling through floor
+            if (playerCar.position.y < 0.1) {
+                playerCar.position.y = 0.1;
+            }
+
+            // Update engine sound
+            updateEngineSound();
+        }
+
+        function updatePowerUps(currentTime) { /* ... (same as before) ... */
+            powerUps.forEach(p => {
+                if (p.userData.active) {
+                    p.position.y = 1.0 + Math.sin(currentTime * powerUpBobSpeed * 1.5 + p.userData.bobOffset) * powerUpBobAmount;
+                    if (p.userData.visualMesh) {
+                        p.userData.visualMesh.rotation.y += 0.015;
+                        if (p.userData.type === powerUpTypes.KETUPAT) { p.userData.visualMesh.rotation.y -= 0.010; }
+                        else if (p.userData.type === powerUpTypes.CRESCENT) { p.userData.visualMesh.rotation.x += 0.01; p.userData.visualMesh.rotation.z -= 0.005; }
+                    }
+                } else {
+                    p.userData.respawnTimer--;
+                    if (p.userData.respawnTimer <= 0) {
+                        p.userData.active = true; p.visible = true;
+                        if (p.userData.visualMesh) { p.userData.visualMesh.visible = true; p.userData.visualMesh.traverse(child => { child.visible = true; }); }
+                    }
+                }
+            });
+        }
+        function updateEidSign(currentTime) { /* ... (same as before) ... */
+            if (eidSign) { eidSign.position.y = signBaseY + Math.sin(currentTime * signBobSpeed) * signBobAmount; eidSign.rotation.y += signRotateSpeed; }
+        }
+
+        function updateBackgroundCars() {
+            const delta = clock.getDelta();
+            const collisionAvoidanceDistance = 5; // Distance at which cars start avoiding each other
+
+            backgroundCars.forEach(bgCar => {
+                const data = bgCar.userData;
+                
+                // Get direction to player
+                const toPlayer = new THREE.Vector3();
+                if (playerCar) {
+                    toPlayer.copy(playerCar.position).sub(bgCar.position).normalize();
+                }
+
+                // Check for potential collisions with other cars
+                let avoidanceDirection = new THREE.Vector3();
+                let needsAvoidance = false;
+
+                // Avoid player car
+                const distanceToPlayer = playerCar ? bgCar.position.distanceTo(playerCar.position) : Infinity;
+                if (distanceToPlayer < collisionAvoidanceDistance) {
+                    avoidanceDirection.sub(toPlayer); // Move away from player
+                    needsAvoidance = true;
+                }
+
+                // Avoid other background cars
+                backgroundCars.forEach(otherCar => {
+                    if (otherCar !== bgCar) {
+                        const distance = bgCar.position.distanceTo(otherCar.position);
+                        if (distance < collisionAvoidanceDistance) {
+                            const awayFromOther = new THREE.Vector3().subVectors(bgCar.position, otherCar.position).normalize();
+                            avoidanceDirection.add(awayFromOther);
+                            needsAvoidance = true;
+                        }
+                    }
+                });
+
+                // Decide whether to chase player, avoid collision, or roam
+                let targetDirection;
+                const chaseRange = 40; // Distance at which cars start chasing player
+                
+                if (needsAvoidance) {
+                    // Use avoidance direction
+                    targetDirection = avoidanceDirection.normalize();
+                    data.changeDirectionTimer = 30; // Keep avoiding for a short while
+                } else if (distanceToPlayer < chaseRange) {
+                    // Chase player
+                    targetDirection = toPlayer;
+                    data.changeDirectionTimer = 60;
+                } else {
+                    // Normal boundary behavior
+                    data.changeDirectionTimer -= 1;
+                    let needsNewDirection = data.changeDirectionTimer <= 0;
+
+                    // Boundary check
+                    const nextPos = bgCar.position.clone().add(data.velocity);
+                    if (Math.abs(nextPos.x) > worldBoundary || Math.abs(nextPos.z) > worldBoundary) {
+                        needsNewDirection = true;
+                        bgCar.position.x = Math.max(-worldBoundary, Math.min(worldBoundary, bgCar.position.x));
+                        bgCar.position.z = Math.max(-worldBoundary, Math.min(worldBoundary, bgCar.position.z));
+                    }
+
+                    if (needsNewDirection) {
+                        if (Math.abs(bgCar.position.x) > worldBoundary * 0.9 || Math.abs(bgCar.position.z) > worldBoundary * 0.9) {
+                            targetDirection = new THREE.Vector3(-bgCar.position.x + (Math.random() - 0.5) * 50, 0, -bgCar.position.z + (Math.random() - 0.5) * 50).normalize();
+                        } else {
+                            targetDirection = new THREE.Vector3((Math.random() - 0.5), 0, (Math.random() - 0.5)).normalize();
+                        }
+                        data.changeDirectionTimer = Math.random() * (backgroundCarChangeDirTimeMax - backgroundCarChangeDirTimeMin) + backgroundCarChangeDirTimeMin;
+                    } else {
+                        targetDirection = data.targetDirection;
+                    }
+                }
+
+                // Update target direction
+                data.targetDirection = targetDirection;
+
+                // Smooth steering with increased responsiveness when avoiding or chasing
+                const steeringSpeed = needsAvoidance ? backgroundCarTurnRate * 3 : 
+                                    (distanceToPlayer < chaseRange ? backgroundCarTurnRate * 2 : backgroundCarTurnRate);
+                const currentDir = data.velocity.clone().normalize();
+                currentDir.lerp(data.targetDirection, steeringSpeed).normalize();
+                
+                // Adjust speed based on situation
+                let targetSpeed = backgroundCarBaseSpeed;
+                if (needsAvoidance) {
+                    targetSpeed *= 0.7; // Slower when avoiding
+                } else if (distanceToPlayer < chaseRange) {
+                    targetSpeed *= 1.5; // Faster when chasing
+                }
+                data.velocity = currentDir.multiplyScalar(targetSpeed);
+
+                // Apply movement
+                bgCar.position.add(data.velocity);
+                
+                // Maintain special heights for different car types
+                bgCar.position.y = data.modelKey === 'bg3' ? 0.863 : 0.241;
+                bgCar.position.y = data.modelKey === 'bg4' ? 0.34 : bgCar.position.y;
+                bgCar.position.y = data.modelKey === 'bg2' ? 0.163 : bgCar.position.y;
+                bgCar.position.y = data.modelKey === 'bg1' ? 0.053 : bgCar.position.y;
+
+                // Update rotation
+                const lookTarget = bgCar.position.clone().add(data.velocity);
+                bgCar.lookAt(lookTarget.x, bgCar.position.y, lookTarget.z);
+            });
+        }
+
+        function displayGreeting() { /* ... (same as before) ... */
+            if (greetingTimeoutId !== null) { clearTimeout(greetingTimeoutId); }
+            const randomIndex = Math.floor(Math.random() * eidGreetings.length); const message = eidGreetings[randomIndex];
+            infoElement.textContent = message; infoElement.style.color = '#FFFFaa';
+            greetingTimeoutId = setTimeout(() => { infoElement.textContent = defaultInfoText; infoElement.style.color = 'white'; greetingTimeoutId = null; }, 2500);
+        }
+        function checkCollisions() {
+            if (!playerCar) return;
+            const carPos = playerCar.position;
+            powerUps.forEach(p => {
+                if (p.userData.active) {
+                    const powerUpPos = p.position;
+                    const distance = carPos.distanceTo(powerUpPos);
+                    if (distance < collisionThresholdCar + collisionThresholdPowerUp) {
+                        p.userData.active = false;
+                        p.visible = false;
+                        if (p.userData.visualMesh) {
+                            p.userData.visualMesh.visible = false;
+                            p.userData.visualMesh.traverse(child => { child.visible = false; });
+                        }
+                        p.userData.respawnTimer = powerUpRespawnTime;
+                        
+                        // Play power-up collection sound
+                        playPowerUpSound();
+                        
+                        if (p.userData.type === powerUpTypes.MOON || p.userData.type === powerUpTypes.CRESCENT) {
+                            boostTimer = Math.max(boostTimer, boostDurationShort);
+                        } else if (p.userData.type === powerUpTypes.KETUPAT || p.userData.type === powerUpTypes.LANTERN || p.userData.type === powerUpTypes.GREEN_LANTERN) {
+                            boostTimer = Math.max(boostTimer, boostDurationLong);
+                        }
+                        displayGreeting();
+                    }
+                }
+            });
+        }
+
+        function updateCamera() {
+            if (!playerCar) return;
+            
+            // Use currentCameraHeight instead of fixed cameraHeight
+            const offset = new THREE.Vector3(0, currentCameraHeight, cameraFollowDistance);
+            offset.applyQuaternion(playerCar.quaternion);
+            const desiredCameraPosition = playerCar.position.clone().add(offset);
+            camera.position.lerp(desiredCameraPosition, 0.08);
+            
+            // Adjust look target based on camera height
+            const lookHeight = playerCar.position.y + (currentCameraHeight * 0.1);
+            camera.lookAt(playerCar.position.x, lookHeight, playerCar.position.z);
+        }
+
+        // Create fire particle system
+        function createFireParticles() {
+            // Create triangle shape for particles
+            const particleGeometry = new THREE.ConeGeometry(0.15, 0.3, 3);
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            for (let i = 0; i < maxParticles; i++) {
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
+                particle.visible = false;
+                particle.userData = {
+                    velocity: new THREE.Vector3(),
+                    life: 0,
+                    maxLife: 30
+                };
+                scene.add(particle);
+                fireParticles.push(particle);
+            }
+        }
+
+        // Spawn new fire particles
+        function spawnFireParticle(intensity = 1) {
+            const particlesToSpawn = intensity; // Spawn multiple particles based on intensity
+
+            for (let j = 0; j < particlesToSpawn; j++) {
+                for (let particle of fireParticles) {
+                    if (!particle.visible) {
+                        // Position behind the car
+                        const backward = new THREE.Vector3();
+                        playerCar.getWorldDirection(backward);
+                        backward.multiplyScalar(-1); // Point backwards
+                        
+                        const spread = intensity > 1 ? 0.8 : 0.3; // Wider spread for boost
+                        const offset = new THREE.Vector3(
+                            (Math.random() - 0.5) * spread, // Random spread
+                            0.5, // Height
+                            (Math.random() - 0.5) * spread // Added Z spread
+                        );
+                        offset.add(backward.multiplyScalar(1.5)); // Behind the car
+                        
+                        particle.position.copy(playerCar.position).add(offset);
+
+                        // Random velocity with more variation during boost
+                        const velocityScale = intensity > 1 ? 0.15 : 0.08;
+                        particle.userData.velocity.set(
+                            (Math.random() - 0.5) * velocityScale,
+                            Math.random() * velocityScale,
+                            (Math.random() - 0.5) * velocityScale
+                        );
+                        particle.userData.velocity.add(backward.multiplyScalar(0.1));
+
+                        // Reset life
+                        particle.userData.life = particle.userData.maxLife;
+                        particle.visible = true;
+                        particle.material.opacity = 0.8;
+                        particle.scale.set(1, 1, 1);
+                        
+                        // Set color based on boost type and intensity
+                        if (boostTimer > 0) {
+                            particle.material.color.setHex(0x00ffff); // Cyan for power-up boost
+                        } else if (keys.Shift) {
+                            particle.material.color.setHex(0xff3300); // Orange for shift boost
+                        } else {
+                            particle.material.color.setHex(0x666666); // Gray for normal driving
+                        }
+                        
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Update fire particles
+        function updateFireParticles() {
+            const isMoving = Math.abs(speed) > 0.01;
+            const isShiftBoosting = keys.Shift && isMoving;
+            const isPowerUpBoosting = boostTimer > 0 && isMoving;
+            
+            if (isMoving) {
+                particleTimer++;
+                if (particleTimer >= particleSpawnRate) {
+                    if (isShiftBoosting) {
+                        spawnFireParticle(6); // 300% more particles (6 particles per spawn)
+                    } else if (isPowerUpBoosting) {
+                        spawnFireParticle(4); // Power-up boost particles
+                    } else {
+                        spawnFireParticle(2); // Normal driving particles
+                    }
+                    particleTimer = 0;
+                }
+            }
+
+            fireParticles.forEach(particle => {
+                if (particle.visible) {
+                    // Update position
+                    particle.position.add(particle.userData.velocity);
+                    
+                    // Update life
+                    particle.userData.life--;
+                    if (particle.userData.life <= 0) {
+                        particle.visible = false;
+                    } else {
+                        // Fade out and scale up
+                        const lifeRatio = particle.userData.life / particle.userData.maxLife;
+                        particle.material.opacity = lifeRatio * 0.8;
+                        const scale = 1 + (1 - lifeRatio) * 2;
+                        particle.scale.set(scale, scale, scale);
+                    }
+                }
+            });
+        }
+
+        // Add these new functions after createEidSign function
+        function createMoonAndStars() {
+            // Create moon
+            const moonGeometry = new THREE.SphereGeometry(8, 32, 32);
+            const moonMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffdd,
+                emissive: 0xffffdd,
+                emissiveIntensity: 0.6,
+                roughness: 0.5,
+                metalness: 0.1
+            });
+            const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+            moon.position.set(-80, 60, -100);
+            scene.add(moon);
+
+            // Add glow to moon
+            const moonGlow = new THREE.PointLight(0xffffdd, 2, 200);
+            moonGlow.position.copy(moon.position);
+            scene.add(moonGlow);
+
+            // Create stars
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.3,
+                transparent: true,
+                opacity: 0.8,
+                sizeAttenuation: true
+            });
+
+            const starsVertices = [];
+            for (let i = 0; i < 2000; i++) {
+                const radius = 150 + Math.random() * 100; // Distance from center
+                const theta = Math.random() * Math.PI * 2; // Random angle around
+                const phi = Math.acos((Math.random() * 2) - 1); // Random angle up
+
+                const x = radius * Math.sin(phi) * Math.cos(theta);
+                const y = Math.abs(radius * Math.cos(phi)) + 20; // Keep stars above horizon
+                const z = radius * Math.sin(phi) * Math.sin(theta);
+
+                starsVertices.push(x, y, z);
+            }
+
+            starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+            const stars = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(stars);
+        }
+
+        // Add to init function after createMoonAndStars
+        function initBackgroundMusic() {
+            backgroundMusic = new Audio('abc.mp3');
+            backgroundMusic.loop = true;
+            backgroundMusic.volume = 0.39;
+        }
+
+        // Add this function after createMoonAndStars
+        function createFirework(position) {
+            const particles = [];
+            const particleCount = 50;
+            const colors = [
+                new THREE.Color(0xff0000), // Red
+                new THREE.Color(0xffff00), // Yellow
+                new THREE.Color(0x00ff00), // Green
+                new THREE.Color(0x0000ff), // Blue
+                new THREE.Color(0xff00ff)  // Purple
+            ];
+            
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const material = new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 1
+            });
+
+            for (let i = 0; i < particleCount; i++) {
+                const particle = new THREE.Mesh(geometry, material.clone());
+                particle.position.copy(position);
+                
+                // Random explosion direction
+                const phi = Math.random() * Math.PI * 2;
+                const theta = Math.random() * Math.PI;
+                const velocity = new THREE.Vector3(
+                    Math.sin(theta) * Math.cos(phi),
+                    Math.cos(theta),
+                    Math.sin(theta) * Math.sin(phi)
+                ).multiplyScalar(0.2 + Math.random() * 0.3);
+
+                particle.userData = {
+                    velocity: velocity,
+                    life: 1.0
+                };
+                
+                scene.add(particle);
+                particles.push(particle);
+            }
+            
+            // Add light flash
+            const light = new THREE.PointLight(color, 2, 10);
+            light.position.copy(position);
+            scene.add(light);
+            
+            return {
+                particles: particles,
+                light: light,
+                update: function() {
+                    let alive = false;
+                    particles.forEach(particle => {
+                        if (particle.userData.life > 0) {
+                            alive = true;
+                            particle.position.add(particle.userData.velocity);
+                            particle.userData.velocity.y -= 0.002; // Gravity
+                            particle.userData.life -= 0.02;
+                            particle.material.opacity = particle.userData.life;
+                            particle.scale.setScalar(Math.max(0.1, particle.userData.life));
+                        }
+                    });
+                    
+                    // Update light
+                    light.intensity = Math.max(0, particles[0].userData.life * 2);
+                    
+                    if (!alive) {
+                        // Cleanup
+                        particles.forEach(p => {
+                            scene.remove(p);
+                            p.geometry.dispose();
+                            p.material.dispose();
+                        });
+                        scene.remove(light);
+                        return false;
+                    }
+                    return true;
+                }
+            };
+        }
+
+        // Add to animate function before renderer.render
+        function updateFireworks() {
+            const currentTime = Date.now();
+            
+            // Launch new firework
+            if (currentTime - lastFireworkTime > fireworkInterval) {
+                const x = (Math.random() - 0.5) * 100;
+                const y = 30 + Math.random() * 40;
+                const z = (Math.random() - 0.5) * 100;
+                
+                fireworks.push(createFirework(new THREE.Vector3(x, y, z)));
+                lastFireworkTime = currentTime;
+            }
+            
+            // Update existing fireworks
+            fireworks = fireworks.filter(firework => firework.update());
+        }
+
+        function handleMouseMove(event) {
+            if (isMouseControlEnabled) {
+                // Convert mouse movement to normalized value (-1 to 1)
+                mouseY = (event.clientY / window.innerHeight) * 2 - 1;
+                // Smoothly adjust camera height based on mouse position
+                const targetHeight = cameraHeight + (mouseY * (maxCameraHeight - minCameraHeight));
+                currentCameraHeight = THREE.MathUtils.lerp(currentCameraHeight, targetHeight, 0.1);
+                currentCameraHeight = THREE.MathUtils.clamp(currentCameraHeight, minCameraHeight, maxCameraHeight);
+            }
+        }
+
+        // --- Animation Loop ---
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!gameReady) return; // Don't run updates until init is complete
+
+            const delta = clock.getDelta();
+            const currentTime = clock.getElapsedTime();
+
+            updatePlayerCar();
+            updateFireParticles();
+            updatePowerUps(currentTime);
+            updateEidSign(currentTime);
+            updateBackgroundCars();
+            updateFireworks();
+            checkCollisions();
+            updateCamera();
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Start Everything ---
+        init(); // Call the async init function
+
+    </script>
+</body>
+
+</html>
