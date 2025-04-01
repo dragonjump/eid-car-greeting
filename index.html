@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>comel.lol - Simple Static Hosting</title>
+    <link rel="icon" type="image/png" href="https://comel.lol/logo.png">
+    <!-- HTML Meta Tags -->
+<title>comel.lol - Simple Static Hosting</title>
+<meta name="description" content="Comel.lol is a simple static site hosting service that allows you to host your static websites (HTML, CSS, JavaScript, images) directly from a directory within your public GitHub repository. No complex setup, just point and go!">
+
+<!-- Facebook Meta Tags -->
+<meta property="og:url" content="https://comel.lol">
+<meta property="og:type" content="website">
+<meta property="og:title" content="comel.lol - Simple Static Hosting">
+<meta property="og:description" content="Comel.lol is a simple static site hosting service that allows you to host your static websites (HTML, CSS, JavaScript, images) directly from a directory within your public GitHub repository. No complex setup, just point and go!">
+<meta property="og:image" content="https://comel.lol/logo.png">
+
+<!-- Twitter Meta Tags -->
+<meta name="twitter:card" content="summary_large_image">
+<meta property="twitter:domain" content="comel.lol">
+<meta property="twitter:url" content="https://comel.lol">
+<meta name="twitter:title" content="comel.lol - Simple Static Hosting">
+<meta name="twitter:description" content="Comel.lol is a simple static site hosting service that allows you to host your static websites (HTML, CSS, JavaScript, images) directly from a directory within your public GitHub repository. No complex setup, just point and go!">
+<meta name="twitter:image" content="https://comel.lol/logo.png">
+
+<!-- Meta Tags Generated via https://www.opengraph.xyz -->
+    <style>
+        /* --- Basic Reset & Defaults --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            /* Smooth scrolling for anchor links */
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            line-height: 1.6;
+            color: #333;
+            background-color: #f9f9f9;
+            /* Light grey background */
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            /* Ensure footer stays at bottom */
+        }
+
+        /* --- Container & Layout --- */
+        .container {
+            max-width: 960px;
+            /* Max width for content */
+            margin: 0 auto;
+            /* Center content horizontally */
+            padding: 20px;
+        }
+
+        main {
+            flex-grow: 1;
+            /* Allow main content to expand */
+            padding: 30px 0;
+        }
+
+        /* --- Header --- */
+        .main-header {
+            background-color: #3498db;
+            /* A pleasant blue */
+            color: #fff;
+            padding: 25px 0;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .main-header h1 {
+            font-size: 2.8rem;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .main-header .tagline {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        /* --- Sections --- */
+        .section {
+            background-color: #fff;
+            /* White background for sections */
+            padding: 30px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        .section h2 {
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            color: #2980b9;
+            /* Darker blue for section headers */
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        /* --- How it Works List --- */
+        .how-it-works ol {
+            list-style: none;
+            /* Remove default numbers */
+            counter-reset: step-counter;
+            padding-left: 0;
+        }
+
+        .how-it-works li {
+            counter-increment: step-counter;
+            margin-bottom: 15px;
+            padding-left: 45px;
+            /* Space for the number */
+            position: relative;
+            font-size: 1.05rem;
+        }
+
+        .how-it-works li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: -2px;
+            background-color: #3498db;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            /* Use flexbox for centering */
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            line-height: 30px;
+            /* Ensure vertical centering */
+        }
+
+        /* --- Buttons & Links --- */
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .button {
+            display: inline-block;
+            background-color: #2ecc71;
+            /* Green for action */
+            color: #fff;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: background-color 0.2s ease;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .button:hover {
+            background-color: #27ae60;
+            /* Darker green on hover */
+            text-decoration: none;
+        }
+
+        .button-secondary {
+            background-color: #e0e0e0;
+            color: #555;
+        }
+
+        .button-secondary:hover {
+            background-color: #cccccc;
+        }
+
+        .cta-buttons {
+            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+            /* Space between buttons */
+            flex-wrap: wrap;
+            /* Allow buttons to wrap on small screens */
+        }
+
+
+        /* --- Footer --- */
+        .main-footer {
+            background-color: #333;
+            color: #ccc;
+            text-align: center;
+            padding: 20px 0;
+            font-size: 0.9rem;
+            margin-top: auto;
+            /* Push footer to bottom */
+        }
+
+        .main-footer a {
+            color: #77ccff;
+            /* Lighter blue for footer links */
+        }
+
+        /* --- Responsive Design --- */
+        @media (max-width: 768px) {
+            .main-header h1 {
+                font-size: 2.2rem;
+            }
+
+            .main-header .tagline {
+                font-size: 1rem;
+            }
+
+            .section h2 {
+                font-size: 1.6rem;
+            }
+
+            .cta-buttons {
+                flex-direction: column;
+                /* Stack buttons vertically */
+                align-items: center;
+            }
+
+            .button {
+                width: 80%;
+                /* Make buttons wider */
+                max-width: 300px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px;
+            }
+
+            .main-header h1 {
+                font-size: 1.9rem;
+            }
+
+            .main-header .tagline {
+                font-size: 0.9rem;
+            }
+
+            .section {
+                padding: 20px;
+            }
+
+            .section h2 {
+                font-size: 1.4rem;
+            }
+
+            .how-it-works li {
+                font-size: 1rem;
+                padding-left: 40px;
+            }
+
+            .how-it-works li::before {
+                width: 28px;
+                height: 28px;
+                font-size: 0.8rem;
+                line-height: 28px;
+            }
+        }
+
+        .logo {
+            max-width: 190px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header class="main-header">
+        <div class="container">
+            <img src="https://comel.lol/logo.png" alt="comel.lol logo" class="logo" />
+
+            <h1>comel.lol</h1>
+            <p class="tagline">Simple, Free Static Site Hosting from COMEL.LOL GitHub Repositories</p>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+
+            <section class="section intro">
+                <h2>What is comel.lol?</h2>
+                <p>Comel.lol offers a straightforward way to host your static websites (HTML, CSS, JavaScript, images)
+                    directly from a directory within your public GitHub repository. No complex setup, just point and go!
+                </p>
+                <p>It's perfect for personal sites, project pages, documentation, portfolios, and anyone who wants
+                    quick, hassle-free hosting.</p>
+            </section>
+
+            <section class="section how-it-works">
+                <h2>How It Works</h2>
+                <ol>
+                    <li><strong>Use the comel.lol GitHub Repository:</strong> Make sure your project is in the
+                        `gh-pages` branch and in the public GitHub repository.</li>
+                    <li><strong>Organize Your Site:</strong> Place all your static website files (including
+                        `index.html`) inside a specific directory within that repository (e.g., `/docs`, `/public`, or
+                        the root `/`).</li>
+                    <li><strong>Visit Your Site:</strong> Your site will be accessible at
+                        `your-username.comel.lol/repository-name/directory-name/` (or similar - *you might need to
+                        define the exact URL structure*).</li>
+                    <!-- Adjust the URL structure above based on your actual implementation -->
+                </ol>
+                <p>Updates pushed to your GitHub repository directory are automatically reflected on your live site!</p>
+            </section>
+
+            <section class="section features">
+                <h2>Key Features</h2>
+                <ul>
+                    <li>✅<strong>Completely Free:</strong> No hidden costs for basic hosting.</li>
+                    <li>✅<strong>GitHub Integrated:</strong> Updates are as simple as `git push`.</li>
+                    <li>✅<strong>Simple Setup:</strong> No servers to manage, just your code.</li>
+                    <li>✅<strong>Fast & Reliable:</strong> Served directly as static files.</li>
+                    <li>✅<strong>Community Driven:</strong> Built with openness in mind.</li>
+                </ul>
+            </section>
+
+            <section class="section call-to-action">
+                <h2>Get Started or Explore</h2>
+                <p>Ready to host your site or see what others have built?</p>
+                <div class="cta-buttons">
+                    <!-- Make sure these links point to the correct places! -->
+                    <a href="https://github.com/dragonjump/comel.lol" target="_blank" rel="noopener noreferrer"
+                        class="button">View on GitHub (Instructions)</a>
+                    <a href="#listing-directory"
+                        onclick="document.getElementById('listing-directory').style.display='block';"
+                        class="button button-secondary">Browse Hosted Sites</a>
+                    <!-- This link needs a backend/process to generate the list -->
+                </div>
+            </section>
+            <section id="listing-directory" style="display: none;" class="section call-to-action">
+
+                <h2>Directory List</h2>
+                <h3> <a href="https://comel.lol/car-eid-greeting" target="_blank" rel="noopener noreferrer">Car Eid
+                        Greeting Game</a></p>
+            </section>
+        </div>
+    </main>
+
+    <footer class="main-footer">
+        <div class="container">
+            <p>© 2025 comel.lol - Open Source Static Hosting | <a href="https://github.com/dragonjump/comel.lol"
+                    target="_blank" rel="noopener noreferrer">Project on GitHub</a></p>
+            <!-- Replace YOUR_USERNAME with the actual GitHub username/organization -->
+        </div>
+    </footer>
+
+</body>
+
+</html>
