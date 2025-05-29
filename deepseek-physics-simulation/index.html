@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Simulation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #1a2a6c);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(to right, #ff7e5f, #feb47b);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            max-width: 1000px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .simulation-container {
+            flex: 1;
+            min-width: 300px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .controls-container {
+            flex: 0 0 300px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        canvas {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            width: 100%;
+            height: 400px;
+            display: block;
+            cursor: pointer;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group h3 {
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            color: #ffb347;
+            display: flex;
+            align-items: center;
+        }
+
+        .control-group h3 i {
+            margin-right: 10px;
+            font-size: 1.4rem;
+        }
+
+        .slider-container {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ff7e5f;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+        }
+
+        .value-display {
+            text-align: right;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(to right, #ff7e5f, #feb47b);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 0.9rem;
+            opacity: 0.7;
+            max-width: 800px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .controls-container {
+                flex: 0 0 auto;
+            }
+
+            canvas {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+ <p>  <small>Prompt:
+        "Create an interactive physics simulation using HTML, CSS, and JavaScript. The webpage should feature a canvas
+        where objects (such as balls or boxes) can move and collide based on physics principles. Implement gravity,
+        friction, and collision detection using JavaScript. Include UI controls to adjust parameters like gravity
+        strength, object mass, and bounce factor. Ensure the simulation is visually appealing and responsive."
+    </small></p>
+    <header>
+        <h1>Interactive Physics Simulation</h1>
+        <p class="subtitle">Click on the canvas to add balls. Adjust physics parameters using the controls.</p>
+    </header>
+
+    <div class="container">
+        <div class="simulation-container">
+            <canvas id="physicsCanvas"></canvas>
+            <div class="stats">
+                <div>Balls: <span id="ballCount">0</span></div>
+                <div>FPS: <span id="fps">0</span></div>
+            </div>
+        </div>
+
+        <div class="controls-container">
+            <div class="control-group">
+                <h3>⚙️ Physics Parameters</h3>
+
+                <div class="slider-container">
+                    <label for="gravity">Gravity Strength</label>
+                    <input type="range" id="gravity" min="0" max="1" step="0.01" value="0.2">
+                    <div class="value-display"><span id="gravity-value">0.20</span></div>
+                </div>
+
+                <div class="slider-container">
+                    <label for="friction">Friction Coefficient</label>
+                    <input type="range" id="friction" min="0" max="0.2" step="0.01" value="0.05">
+                    <div class="value-display"><span id="friction-value">0.05</span></div>
+                </div>
+
+                <div class="slider-container">
+                    <label for="bounce">Bounce Factor</label>
+                    <input type="range" id="bounce" min="0.1" max="0.99" step="0.01" value="0.8">
+                    <div class="value-display"><span id="bounce-value">0.80</span></div>
+                </div>
+
+                <div class="slider-container">
+                    <label for="mass">Object Mass</label>
+                    <input type="range" id="mass" min="1" max="50" step="1" value="15">
+                    <div class="value-display"><span id="mass-value">15</span></div>
+                </div>
+            </div>
+
+            <div class="buttons">
+                <button id="resetBtn">Reset Simulation</button>
+                <button id="clearBtn">Clear Balls</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Interactive Physics Simulation | Created with HTML5 Canvas and JavaScript</p>
+    </footer>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('physicsCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Resize canvas to fit container
+        function resizeCanvas() {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+        }
+
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Physics parameters
+        let gravity = 0.2;
+        let friction = 0.05;
+        let bounceFactor = 0.8;
+        let objectMass = 15;
+
+        // Ball class
+        class Ball {
+            constructor(x, y, mass) {
+                this.x = x;
+                this.y = y;
+                this.mass = mass;
+                this.radius = Math.sqrt(mass) * 2;
+                this.vx = (Math.random() - 0.5) * 8;
+                this.vy = (Math.random() - 0.5) * 8;
+                this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+
+                // Add highlight
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.3, this.y - this.radius * 0.3, this.radius * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.fill();
+
+                // Add shadow
+                ctx.beginPath();
+                ctx.arc(this.x + this.radius * 0.2, this.y + this.radius * 0.2, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.fill();
+            }
+
+            update() {
+                // Apply gravity
+                this.vy += gravity;
+
+                // Apply friction
+                this.vx *= (1 - friction);
+                this.vy *= (1 - friction);
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Boundary collision
+                if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.vx = -this.vx * bounceFactor;
+                } else if (this.x + this.radius > canvas.width) {
+                    this.x = canvas.width - this.radius;
+                    this.vx = -this.vx * bounceFactor;
+                }
+
+                if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.vy = -this.vy * bounceFactor;
+                } else if (this.y + this.radius > canvas.height) {
+                    this.y = canvas.height - this.radius;
+                    this.vy = -this.vy * bounceFactor;
+                }
+            }
+        }
+
+        // Store all balls
+        const balls = [];
+
+        // Add ball on canvas click
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            balls.push(new Ball(x, y, objectMass));
+            updateBallCount();
+        });
+
+        // Collision detection
+        function checkCollisions() {
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const ball1 = balls[i];
+                    const ball2 = balls[j];
+
+                    const dx = ball2.x - ball1.x;
+                    const dy = ball2.y - ball1.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Check if balls are colliding
+                    if (distance < ball1.radius + ball2.radius) {
+                        // Calculate collision normal
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+
+                        // Calculate relative velocity
+                        const rvx = ball2.vx - ball1.vx;
+                        const rvy = ball2.vy - ball1.vy;
+
+                        // Calculate relative velocity in the normal direction
+                        const velAlongNormal = rvx * nx + rvy * ny;
+
+                        // Do not resolve if velocities are separating
+                        if (velAlongNormal > 0) continue;
+
+                        // Calculate impulse scalar
+                        const impulseScalar = -(1 + bounceFactor) * velAlongNormal;
+                        const impulseScalar1 = impulseScalar / (ball1.mass + ball2.mass);
+                        const impulseScalar2 = impulseScalar / (ball2.mass + ball1.mass);
+
+                        // Apply impulse
+                        ball1.vx -= impulseScalar1 * nx * ball2.mass;
+                        ball1.vy -= impulseScalar1 * ny * ball2.mass;
+                        ball2.vx += impulseScalar2 * nx * ball1.mass;
+                        ball2.vy += impulseScalar2 * ny * ball1.mass;
+
+                        // Positional correction to prevent sticking
+                        const overlap = (ball1.radius + ball2.radius - distance) / 2;
+                        ball1.x -= overlap * nx;
+                        ball1.y -= overlap * ny;
+                        ball2.x += overlap * nx;
+                        ball2.y += overlap * ny;
+                    }
+                }
+            }
+        }
+
+        // Update ball count display
+        function updateBallCount() {
+            document.getElementById('ballCount').textContent = balls.length;
+        }
+
+        // Animation loop
+        let lastTime = 0;
+        let frameCount = 0;
+        let lastFpsUpdate = 0;
+
+        function animate(timestamp) {
+            // Calculate delta time
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            // Clear canvas with a semi-transparent overlay for motion blur effect
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid background
+            drawGrid();
+
+            // Update and draw balls
+            balls.forEach(ball => {
+                ball.update();
+                ball.draw();
+            });
+
+            // Check collisions
+            checkCollisions();
+
+            // Update FPS counter
+            frameCount++;
+            if (timestamp - lastFpsUpdate >= 1000) {
+                document.getElementById('fps').textContent = frameCount;
+                frameCount = 0;
+                lastFpsUpdate = timestamp;
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // Draw grid background
+        function drawGrid() {
+            const gridSize = 30;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+
+            // Vertical lines
+            for (let x = 0; x <= canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            // Horizontal lines
+            for (let y = 0; y <= canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        // Initialize UI controls
+        document.getElementById('gravity').addEventListener('input', (e) => {
+            gravity = parseFloat(e.target.value);
+            document.getElementById('gravity-value').textContent = gravity.toFixed(2);
+        });
+
+        document.getElementById('friction').addEventListener('input', (e) => {
+            friction = parseFloat(e.target.value);
+            document.getElementById('friction-value').textContent = friction.toFixed(2);
+        });
+
+        document.getElementById('bounce').addEventListener('input', (e) => {
+            bounceFactor = parseFloat(e.target.value);
+            document.getElementById('bounce-value').textContent = bounceFactor.toFixed(2);
+        });
+
+        document.getElementById('mass').addEventListener('input', (e) => {
+            objectMass = parseInt(e.target.value);
+            document.getElementById('mass-value').textContent = objectMass;
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            // Reset parameters to defaults
+            gravity = 0.2;
+            friction = 0.05;
+            bounceFactor = 0.8;
+            objectMass = 15;
+
+            // Update UI controls
+            document.getElementById('gravity').value = gravity;
+            document.getElementById('friction').value = friction;
+            document.getElementById('bounce').value = bounceFactor;
+            document.getElementById('mass').value = objectMass;
+
+            document.getElementById('gravity-value').textContent = gravity.toFixed(2);
+            document.getElementById('friction-value').textContent = friction.toFixed(2);
+            document.getElementById('bounce-value').textContent = bounceFactor.toFixed(2);
+            document.getElementById('mass-value').textContent = objectMass;
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            balls.length = 0;
+            updateBallCount();
+        });
+
+        // Add some initial balls
+        function addInitialBalls() {
+            for (let i = 0; i < 5; i++) {
+                const x = Math.random() * (canvas.width - 100) + 50;
+                const y = Math.random() * (canvas.height - 100) + 50;
+                balls.push(new Ball(x, y, Math.floor(Math.random() * 30) + 10));
+            }
+            updateBallCount();
+        }
+
+        // Start simulation
+        addInitialBalls();
+        animate();
+    </script>
+</body>
+
+</html>
+
+<!-- Create an interactive physics simulation using HTML, CSS, and JavaScript. The webpage should feature a canvas where objects (such as balls or boxes) can move and collide based on physics principles. Implement gravity, friction, and collision detection using JavaScript. Include UI controls to adjust parameters like gravity strength, object mass, and bounce factor. Ensure the simulation is visually appealing and responsive -->
