@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Pickleball - Paddle Control</title>
+    <style>
+        body {
+            cursor: url('./custom_cursor.cur'), auto;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #333;
+            color: white;
+            font-family: 'Arial', sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #info-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        #score {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            font-size: 2.5em;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+        }
+
+        #message {
+            font-size: 3em;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info-overlay">
+        <div id="score">PLAYER 0 - 0 BOT</div>
+        <div id="message">Click to Play</div>
+    </div>
+    <script type="module">
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js';
+        import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/+esm';
+
+        class PickleballGame {
+            constructor() {
+                this.GAME_STATES = { MENU: 'MENU', SERVING: 'SERVING', PLAYING: 'PLAYING', SCORE: 'SCORE', GAME_OVER: 'GAME_OVER' };
+                this.gameState = this.GAME_STATES.MENU;
+                this.scores = { player: 0, bot: 0 };
+                this.lastHitBy = null;
+                this.winningScore = 7;
+                this.courtWidth = 20;
+                this.courtLength = 44;
+                this.ballRadius = 0.4;
+
+                // For back-paddle hit detection
+                this.paddleFrontHitThreshold = -0.5; // Contact normal Z component must be less than this for a front hit
+                this.paddleBackHitThreshold = 0.5;   // Contact normal Z component must be greater than this for a back hit
+
+                this.initEngine();
+                this.createCourt();
+                this.createPaddles();
+                this.createBall();
+                this.setupContactMaterials(); // Using more sensitive ball params from previous step
+                this.initEventListeners();
+                this.animate();
+            }
+
+            initEngine() {
+                this.world = new CANNON.World({
+                    gravity: new CANNON.Vec3(0, -9.82 * 1.5, 0), // Sensitive ball gravity
+                });
+                this.world.defaultContactMaterial.friction = 0.1;
+                this.world.defaultContactMaterial.restitution = 1.2;
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x87ceeb);
+                this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.set(0, 12, this.courtLength / 2 + 10);
+                this.camera.lookAt(0, 0, 0);
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                document.body.appendChild(this.renderer.domElement);
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); this.scene.add(ambientLight);
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                directionalLight.position.set(10, 20, 5); directionalLight.castShadow = true;
+                directionalLight.shadow.camera.left = -this.courtWidth; directionalLight.shadow.camera.right = this.courtWidth;
+                directionalLight.shadow.camera.top = this.courtLength / 2; directionalLight.shadow.camera.bottom = -this.courtLength / 2;
+                this.scene.add(directionalLight);
+                this.scoreElement = document.getElementById('score'); this.messageElement = document.getElementById('message');
+                this.objectsToUpdate = []; this.clock = new THREE.Clock();
+            }
+
+            createCourt() { /* ... (as before, using this.courtWidth/Length) ... */
+                const groundGeo = new THREE.PlaneGeometry(this.courtWidth * 2, this.courtLength * 2);
+                const groundMat = new THREE.MeshStandardMaterial({ color: 0x4a7a4a });
+                this.groundMesh = new THREE.Mesh(groundGeo, groundMat); this.groundMesh.receiveShadow = true; this.groundMesh.rotation.x = -Math.PI / 2; this.scene.add(this.groundMesh);
+                const groundShape = new CANNON.Plane();
+                this.groundBody = new CANNON.Body({ mass: 0, shape: groundShape }); this.groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2); this.world.addBody(this.groundBody);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff }); const lineYOffset = 0.01;
+                const boundaryPoints = [new THREE.Vector3(-this.courtWidth / 2, lineYOffset, -this.courtLength / 2), new THREE.Vector3(this.courtWidth / 2, lineYOffset, -this.courtLength / 2), new THREE.Vector3(this.courtWidth / 2, lineYOffset, this.courtLength / 2), new THREE.Vector3(-this.courtWidth / 2, lineYOffset, this.courtLength / 2), new THREE.Vector3(-this.courtWidth / 2, lineYOffset, -this.courtLength / 2)];
+                this.scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(boundaryPoints), lineMat));
+                const centerLinePoints = [new THREE.Vector3(0, lineYOffset, -this.courtLength / 2), new THREE.Vector3(0, lineYOffset, this.courtLength / 2),];
+                this.scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(centerLinePoints), lineMat));
+                const kitchenLineDist = 7;
+                const kitchenLinePlayerPoints = [new THREE.Vector3(-this.courtWidth / 2, lineYOffset, kitchenLineDist), new THREE.Vector3(this.courtWidth / 2, lineYOffset, kitchenLineDist),];
+                this.scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(kitchenLinePlayerPoints), lineMat));
+                const kitchenLineBotPoints = [new THREE.Vector3(-this.courtWidth / 2, lineYOffset, -kitchenLineDist), new THREE.Vector3(this.courtWidth / 2, lineYOffset, -kitchenLineDist),];
+                this.scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(kitchenLineBotPoints), lineMat));
+                const netHeightActual = (34 / 12) * 0.95; const netWidth = this.courtWidth;
+                const netGeo = new THREE.BoxGeometry(netWidth, netHeightActual, 0.2); const netMat = new THREE.MeshStandardMaterial({ color: 0x222222, transparent: true, opacity: 0.8 });
+                this.netMesh = new THREE.Mesh(netGeo, netMat); this.netMesh.position.y = netHeightActual / 2; this.netMesh.receiveShadow = true; this.scene.add(this.netMesh);
+                const netShape = new CANNON.Box(new CANNON.Vec3(netWidth / 2, netHeightActual / 2, 0.1));
+                this.netBody = new CANNON.Body({ mass: 0, shape: netShape }); this.netBody.position.copy(this.netMesh.position); this.world.addBody(this.netBody);
+            }
+
+            createPaddles() {
+                const paddleWidth = 2.5; const paddleHeight = 4; const paddleDepth = 0.3;
+                this.playerPaddle = {};
+                const playerGeo = new THREE.BoxGeometry(paddleWidth, paddleHeight, paddleDepth);
+                const playerMat = new THREE.MeshStandardMaterial({ color: 0x0077ff });
+                this.playerPaddle.mesh = new THREE.Mesh(playerGeo, playerMat); this.playerPaddle.mesh.castShadow = true; this.scene.add(this.playerPaddle.mesh);
+                const playerShape = new CANNON.Box(new CANNON.Vec3(paddleWidth / 2, paddleHeight / 2, paddleDepth / 2));
+                this.playerPaddle.body = new CANNON.Body({ mass: 10, shape: playerShape, type: CANNON.Body.KINEMATIC });
+                this.playerPaddle.body.position.set(0, paddleHeight / 2, this.courtLength / 2 - 5); this.world.addBody(this.playerPaddle.body);
+
+                // --- MODIFIED PLAYER PADDLE COLLISION ---
+                this.playerPaddle.body.addEventListener('collide', (e) => {
+                    if (e.body === this.ball.body) {
+                        // e.contact.ni is the contact normal on the paddle body (this.playerPaddle.body)
+                        // Player paddle front face is in -Z direction. Back face is in +Z direction.
+                        const contactNormalZ = e.contact.ni.z;
+
+                        if (contactNormalZ < this.paddleFrontHitThreshold) { // Hit on the front face
+                            this.lastHitBy = 'player';
+                        } else if (contactNormalZ > this.paddleBackHitThreshold) { // Hit on the back face
+                            // Do nothing, or explicitly nullify lastHitBy if it was somehow set
+                            // this.lastHitBy = null; // Or some other neutral state
+                            console.log("Player paddle: Back hit detected, ignored.");
+                        } else {
+                            // Hit on the side, top, or bottom. Could be treated as a valid hit or ignored.
+                            // For simplicity, let's count side hits as valid for now.
+                            this.lastHitBy = 'player';
+                            console.log("Player paddle: Side/Top/Bottom hit detected.");
+                        }
+                    }
+                });
+
+                this.botPaddle = {}; // ... (bot paddle setup as before)
+                const botGeo = new THREE.BoxGeometry(paddleWidth, paddleHeight, paddleDepth);
+                const botMat = new THREE.MeshStandardMaterial({ color: 0xff4400 });
+                this.botPaddle.mesh = new THREE.Mesh(botGeo, botMat); this.botPaddle.mesh.castShadow = true; this.scene.add(this.botPaddle.mesh);
+                const botShape = new CANNON.Box(new CANNON.Vec3(paddleWidth / 2, paddleHeight / 2, paddleDepth / 2));
+                this.botPaddle.body = new CANNON.Body({ mass: 10, shape: botShape, type: CANNON.Body.KINEMATIC });
+                this.botPaddle.body.position.set(0, paddleHeight / 2, -this.courtLength / 2 + 5); this.world.addBody(this.botPaddle.body);
+                this.botPaddle.body.addEventListener('collide', (e) => {
+                    if (e.body === this.ball.body) {
+                        // Bot paddle front face is in +Z direction
+                        const contactNormalZ = e.contact.ni.z;
+                        if (contactNormalZ > -this.paddleFrontHitThreshold) { // Using -threshold as bot faces opposite way
+                            this.lastHitBy = 'bot';
+                        } // Else, if bot hits with its back, it's an invalid hit (though less likely with AI)
+                    }
+                });
+            }
+
+            createBall() {
+                const ballGeo = new THREE.SphereGeometry(this.ballRadius, 16, 16);
+                const ballMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+                this.ball = {};
+                this.ball.mesh = new THREE.Mesh(ballGeo, ballMat); this.ball.mesh.castShadow = true; this.scene.add(this.ball.mesh);
+                const ballShape = new CANNON.Sphere(this.ballRadius);
+                this.ball.body = new CANNON.Body({ mass: 0.02, shape: ballShape }); // Sensitive ball mass
+                this.world.addBody(this.ball.body);
+                this.objectsToUpdate.push(this.ball);
+            }
+
+            setupContactMaterials() {
+                const ballMaterial = new CANNON.Material('ball');
+                const paddleMaterial = new CANNON.Material('paddle');
+                const groundMaterial = new CANNON.Material('ground');
+                const netMaterial = new CANNON.Material('net');
+                this.ball.body.material = ballMaterial;
+                this.playerPaddle.body.material = paddleMaterial; this.botPaddle.body.material = paddleMaterial;
+                this.groundBody.material = groundMaterial; this.netBody.material = netMaterial;
+                const ballPaddleContact = new CANNON.ContactMaterial(ballMaterial, paddleMaterial, { friction: 0.1, restitution: 0.98 }); // Sensitive
+                this.world.addContactMaterial(ballPaddleContact);
+                const ballGroundContact = new CANNON.ContactMaterial(ballMaterial, groundMaterial, { friction: 0.4, restitution: 0.75 }); // Sensitive
+                this.world.addContactMaterial(ballGroundContact);
+                const ballNetContact = new CANNON.ContactMaterial(ballMaterial, netMaterial, { friction: 0.1, restitution: 0.2 });
+                this.world.addContactMaterial(ballNetContact);
+            }
+
+            initEventListeners() { /* ... (as before) ... */
+                window.addEventListener('resize', this.onWindowResize.bind(this));
+                window.addEventListener('mousemove', this.onMouseMove.bind(this));
+                window.addEventListener('click', this.onClick.bind(this));
+            }
+
+            onWindowResize() { /* ... (as before) ... */
+                this.camera.aspect = window.innerWidth / window.innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            onMouseMove(event) {
+                if (this.gameState === this.GAME_STATES.GAME_OVER || this.gameState === this.GAME_STATES.MENU) return;
+                let mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                let mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+                const paddleWidth = this.playerPaddle.mesh.geometry.parameters.width;
+                const paddleHeight = this.playerPaddle.mesh.geometry.parameters.height;
+                const targetX = mouseX * (this.courtWidth / 2 - paddleWidth / 2);
+
+                // --- PARAMETER FOR HOW CLOSE PADDLE (AND SERVE) CAN BE TO NET ---
+                // Smaller value allows paddle closer to net.
+                // Example: this.ballRadius + 0.1 allows getting very close.
+                // Previous: this.ballRadius + 0.5
+                const Z_RANGE_MIN = this.ballRadius + 0.2; // Adju
+                // sted: Paddle can get closer to net
+                const Z_RANGE_MAX = this.courtLength / 2 - 1;
+                const normalizedMouseY = (mouseY + 1) / 2;
+                const targetZ = Z_RANGE_MIN + (1 - normalizedMouseY) * (Z_RANGE_MAX - Z_RANGE_MIN);
+
+                this.playerPaddle.body.position.x = THREE.MathUtils.clamp(targetX, -this.courtWidth / 2 + paddleWidth / 2, this.courtWidth / 2 - paddleWidth / 2);
+                this.playerPaddle.body.position.z = THREE.MathUtils.clamp(targetZ, Z_RANGE_MIN, Z_RANGE_MAX);
+                this.playerPaddle.body.position.y = paddleHeight / 2;
+            }
+
+            onClick() { /* ... (as before) ... */
+                if (this.gameState === this.GAME_STATES.MENU || this.gameState === this.GAME_STATES.GAME_OVER) {
+                    this.resetGame(); this.gameState = this.GAME_STATES.SERVING; this.messageElement.innerText = "Player Serves\nClick to Serve";
+                } else if (this.gameState === this.GAME_STATES.SERVING) {
+                    this.serveBall(); this.gameState = this.GAME_STATES.PLAYING; this.messageElement.innerText = "";
+                }
+            }
+
+            resetBall(servingPlayer = 'player') {
+                this.ball.body.velocity.set(0, 0, 0); this.ball.body.angularVelocity.set(0, 0, 0);
+                // Important: Reset lastHitBy here so a back-paddle hit that leads to a reset doesn't carry over
+                this.lastHitBy = null;
+
+                if (servingPlayer === 'player') {
+                    const paddlePos = this.playerPaddle.body.position;
+                    const paddleDepth = this.playerPaddle.mesh.geometry.parameters.depth;
+                    let serveX = paddlePos.x;
+                    let serveY = paddlePos.y + this.ballRadius * 0.5; // Slightly above paddle center to avoid immediate re-collision
+                    // Ball is positioned relative to the paddle's current Z.
+                    // If paddle is close to net (due to Z_RANGE_MIN), ball will be too.
+                    let serveZ = paddlePos.z - paddleDepth / 2 - this.ballRadius - 0.05; // Small gap
+                    serveZ = Math.max(serveZ, this.ballRadius + 0.1); // Ensure not inside net
+                    serveZ = Math.min(serveZ, this.courtLength / 2 - this.ballRadius - 0.1);
+                    this.ball.body.position.set(serveX, serveY, serveZ);
+                } else {
+                    this.ball.body.position.set(THREE.MathUtils.randFloatSpread(this.courtWidth / 4), this.botPaddle.mesh.geometry.parameters.height / 2 + 1, -this.courtLength / 2 + 3);
+                }
+            }
+
+            serveBall() { /* ... (as before, using sensitive ball serve forces) ... */
+                const serveForceSideways = THREE.MathUtils.randFloatSpread(6);
+                const serveForceUp = THREE.MathUtils.randFloat(8, 12);
+                const serveForceForwardBase = 22;
+                if (this.ball.body.position.z > 0) {
+                    this.ball.body.velocity.set(serveForceSideways, serveForceUp, -serveForceForwardBase);
+                } else {
+                    this.ball.body.velocity.set(serveForceSideways, serveForceUp, serveForceForwardBase);
+                }
+            }
+
+            resetGame() { /* ... (as before) ... */ this.scores = { player: 0, bot: 0 }; this.updateScoreDisplay(); this.resetBall('player'); }
+            updateScoreDisplay() { /* ... (as before) ... */ this.scoreElement.innerText = `PLAYER ${this.scores.player} - ${this.scores.bot} BOT`; }
+            updateBotAI() { /* ... (as before) ... */
+                if (this.gameState !== this.GAME_STATES.PLAYING && this.gameState !== this.GAME_STATES.SERVING) return;
+                const botPos = this.botPaddle.body.position; const ballPos = this.ball.body.position;
+                const paddleHeight = this.botPaddle.mesh.geometry.parameters.height; const paddleWidth = this.botPaddle.mesh.geometry.parameters.width;
+                let targetX = ballPos.x; const reactionSpeed = 0.07 + Math.random() * 0.03;
+                if (this.ball.body.velocity.z > 0 && ballPos.z < -1) {
+                    let timeToReachBotOptimalZ = Math.abs((botPos.z - ballPos.z) / this.ball.body.velocity.z);
+                    if (this.ball.body.velocity.z !== 0 && timeToReachBotOptimalZ > 0 && timeToReachBotOptimalZ < 0.5) {
+                        targetX = ballPos.x + this.ball.body.velocity.x * timeToReachBotOptimalZ;
+                    }
+                }
+                // let targetZ = -this.courtLength / 2 + 5; 
+                let targetZ = -this.courtLength / 2 + 10 + Math.random() * 5;
+
+                if (ballPos.z < -this.courtLength / 4 && ballPos.z > -this.courtLength / 2 + 2) { targetZ = -this.courtLength / 2 + 2; }
+                else if (ballPos.z < -1 && ballPos.z > -this.courtLength / 4) { targetZ = -this.courtLength / 4; }
+                botPos.x += (targetX - botPos.x) * reactionSpeed;
+                botPos.x = THREE.MathUtils.clamp(botPos.x, -this.courtWidth / 2 + paddleWidth / 2, this.courtWidth / 2 - paddleWidth / 2);
+                botPos.z += (targetZ - botPos.z) * 0.05;
+                botPos.z = THREE.MathUtils.clamp(botPos.z, -this.courtLength / 2 + 1, -this.ballRadius - 0.5);
+                botPos.y = paddleHeight / 2;
+            }
+            checkScoring() { /* ... (as before) ... */
+                const ballPos = this.ball.body.position;
+                if (ballPos.y <= this.ballRadius + 0.1) {
+                    if (Math.abs(ballPos.x) > this.courtWidth / 2 || Math.abs(ballPos.z) > this.courtLength / 2) {
+                        if (this.lastHitBy === 'player') { this.handlePointEnd('bot', "Player hit OUT!"); }
+                        else if (this.lastHitBy === 'bot') { this.handlePointEnd('player', "Bot hit OUT!"); }
+                        else {
+                            if (this.gameState === this.GAME_STATES.SERVING) {
+                                if (this.ball.body.position.z > 0) this.handlePointEnd('bot', "Player served OUT!"); else this.handlePointEnd('player', "Bot served OUT!");
+                            } else { if (ballPos.z > 0) this.handlePointEnd('bot', "Ball out on Player side"); else this.handlePointEnd('player', "Ball out on Bot side"); }
+                        }
+                    } else {
+                        if (ballPos.z > 0) { this.handlePointEnd('bot', "Bot Scores!"); } else { this.handlePointEnd('player', "Player Scores!"); }
+                    }
+                }
+            }
+            handlePointEnd(winner, message) { /* ... (as before) ... */
+                if (this.gameState === this.GAME_STATES.SCORE || this.gameState === this.GAME_STATES.GAME_OVER) return;
+                this.gameState = this.GAME_STATES.SCORE; let nextServer;
+                if (winner === 'player') { this.scores.player++; nextServer = 'player'; } else { this.scores.bot++; nextServer = 'bot'; }
+                this.messageElement.innerText = message || (winner === 'player' ? "Player Scores!" : "Bot Scores!");
+                this.updateScoreDisplay();
+                setTimeout(() => {
+                    if (this.scores.player >= this.winningScore) { this.gameState = this.GAME_STATES.GAME_OVER; this.messageElement.innerText = "YOU WIN! \nClick to Play Again"; }
+                    else if (this.scores.bot >= this.winningScore) { this.gameState = this.GAME_STATES.GAME_OVER; this.messageElement.innerText = "BOT WINS! \nClick to Play Again"; }
+                    else {
+                        this.gameState = this.GAME_STATES.SERVING; const servingPlayerDisplay = nextServer === 'player' ? 'Player' : 'Bot';
+                        this.messageElement.innerText = `${servingPlayerDisplay} Serves\nClick to Continue`; this.resetBall(nextServer);
+                        if (nextServer === 'bot') { setTimeout(() => { if (this.gameState === this.GAME_STATES.SERVING) this.onClick(); }, 1500); }
+                    }
+                }, 2000);
+            }
+            animate() { /* ... (as before) ... */
+                requestAnimationFrame(this.animate.bind(this)); const deltaTime = this.clock.getDelta();
+                if (this.gameState !== this.GAME_STATES.MENU && this.gameState !== this.GAME_STATES.GAME_OVER) { this.world.step(1 / 60, deltaTime, 3); }
+                for (const object of this.objectsToUpdate) { object.mesh.position.copy(object.body.position); object.mesh.quaternion.copy(object.body.quaternion); }
+                this.playerPaddle.mesh.position.copy(this.playerPaddle.body.position); this.playerPaddle.mesh.quaternion.copy(this.playerPaddle.body.quaternion);
+                this.botPaddle.mesh.position.copy(this.botPaddle.body.position); this.botPaddle.mesh.quaternion.copy(this.botPaddle.body.quaternion);
+                this.updateBotAI();
+                if (this.gameState === this.GAME_STATES.PLAYING) { this.checkScoring(); }
+                if (Math.abs(this.ball.body.position.z) > this.courtLength / 2 + 10 && this.gameState === this.GAME_STATES.PLAYING) {
+                    if (this.lastHitBy === 'player') this.handlePointEnd('bot', "Player hit long!");
+                    else if (this.lastHitBy === 'bot') this.handlePointEnd('player', "Bot hit long!");
+                    else { if (this.ball.body.position.z > 0) this.handlePointEnd('bot', "Out of bounds!"); else this.handlePointEnd('player', "Out of bounds!"); }
+                }
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+        const game = new PickleballGame();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,4 @@
+generate single page html css js.
+the goal make a 3d game which incorporate a physics engine like Ammo.js or Cannon.js into your Three.js scene. This allows for realistic object interactions. Imagine a zero-gravity environment where users can push objects around, or a digital playground with interactive contraptions and Rube Goldberg machines.
+
+-gemini-2.5-pro-preview-05-06
